@@ -1,1 +1,1 @@
-# Awesome-Legal-AI-
+# Awesome-Legal-AI
