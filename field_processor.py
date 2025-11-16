@@ -67,13 +67,42 @@ class FieldProcessor:
             # Fix trailing commas before closing braces/brackets
             fixed_text = re.sub(r',(\s*[}\]])', r'\1', fixed_text)
 
+            # Fix Python-style booleans (True/False -> true/false)
+            fixed_text = re.sub(r'\bTrue\b', 'true', fixed_text)
+            fixed_text = re.sub(r'\bFalse\b', 'false', fixed_text)
+            fixed_text = re.sub(r'\bNone\b', 'null', fixed_text)
+
+            # Remove any text before first { or [
+            first_brace = fixed_text.find('{')
+            first_bracket = fixed_text.find('[')
+            if first_brace != -1 and (first_bracket == -1 or first_brace < first_bracket):
+                fixed_text = fixed_text[first_brace:]
+            elif first_bracket != -1:
+                fixed_text = fixed_text[first_bracket:]
+
+            # Remove any text after last } or ]
+            last_brace = fixed_text.rfind('}')
+            last_bracket = fixed_text.rfind(']')
+            if last_brace != -1 and last_brace > last_bracket:
+                fixed_text = fixed_text[:last_brace + 1]
+            elif last_bracket != -1:
+                fixed_text = fixed_text[:last_bracket + 1]
+
             # Try parsing again
             try:
                 result = json.loads(fixed_text)
-                print(f"✓ Successfully parsed {context} after fixing trailing commas")
+                print(f"✓ Successfully parsed {context} after automatic fixes")
                 return result
             except json.JSONDecodeError as e2:
                 print(f"Still failed after attempted fixes: {e2}")
+                # Save failed response to file for debugging
+                try:
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', prefix='failed_parse_') as f:
+                        f.write(fixed_text)
+                        print(f"Saved failed response to: {f.name}")
+                except Exception:
+                    pass
                 return None
 
     def process_fields(
@@ -172,7 +201,11 @@ Example output format:
   }}
 ]
 
-Respond with ONLY the JSON array, no additional text."""
+IMPORTANT:
+- Respond with ONLY valid JSON - no markdown code blocks, no explanations
+- Do NOT use trailing commas
+- Ensure all strings are properly quoted with double quotes
+- The response must be parseable by json.loads() in Python"""
 
         response = self.client.messages.create(
             model=self.model,
@@ -254,7 +287,11 @@ Example:
   }}
 ]
 
-Respond with ONLY the JSON array, no additional text."""
+IMPORTANT:
+- Respond with ONLY valid JSON - no markdown code blocks, no explanations
+- Do NOT use trailing commas
+- Ensure all strings are properly quoted with double quotes
+- The response must be parseable by json.loads() in Python"""
 
         response = self.client.messages.create(
             model=self.model,
@@ -359,7 +396,12 @@ Example:
   }}
 }}
 
-Respond with ONLY the JSON object, no additional text."""
+IMPORTANT:
+- Respond with ONLY valid JSON - no markdown code blocks, no explanations
+- Do NOT use trailing commas
+- Ensure all strings are properly quoted with double quotes
+- The response must be parseable by json.loads() in Python
+- Boolean values should be true/false (lowercase), not True/False"""
 
         response = self.client.messages.create(
             model=self.model,
@@ -461,7 +503,11 @@ Make it clear and professional. For example:
 - Field "DOB" -> label: "What is your date of birth?", explanation: "Enter your date of birth as it appears on your birth certificate (MM/DD/YYYY)"
 - Field "Applicant Full Name" -> label: "What is your full name?", explanation: "Enter your complete legal name as it appears on official documents"
 
-Respond with ONLY the JSON, no additional text."""
+IMPORTANT:
+- Respond with ONLY valid JSON - no markdown code blocks, no explanations
+- Do NOT use trailing commas
+- Ensure all strings are properly quoted with double quotes
+- The response must be parseable by json.loads() in Python"""
 
         try:
             response = self.client.messages.create(
