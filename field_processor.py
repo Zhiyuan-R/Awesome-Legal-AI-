@@ -72,6 +72,15 @@ class FieldProcessor:
             fixed_text = re.sub(r'\bFalse\b', 'false', fixed_text)
             fixed_text = re.sub(r'\bNone\b', 'null', fixed_text)
 
+            # Fix single quotes to double quotes (but be careful with apostrophes in content)
+            # Only fix quotes around keys and simple string values
+            fixed_text = re.sub(r"'(\w+)'(\s*):", r'"\1"\2:', fixed_text)  # Fix keys
+
+            # Fix missing commas between objects in arrays/objects
+            fixed_text = re.sub(r'}\s*{', '},{', fixed_text)
+            fixed_text = re.sub(r']\s*\[', '],[', fixed_text)
+            fixed_text = re.sub(r'"\s*"(\w+)"(\s*):', r'","\1"\2:', fixed_text)
+
             # Remove any text before first { or [
             first_brace = fixed_text.find('{')
             first_bracket = fixed_text.find('[')
@@ -95,6 +104,32 @@ class FieldProcessor:
                 return result
             except json.JSONDecodeError as e2:
                 print(f"Still failed after attempted fixes: {e2}")
+
+                # Last resort: Try to extract partial valid JSON
+                # Find the error location and try to salvage what we can
+                try:
+                    # Try to find where the valid JSON ends
+                    error_pos = e2.pos if hasattr(e2, 'pos') else None
+                    if error_pos and error_pos > 100:
+                        # Try to parse up to the error point
+                        truncated = fixed_text[:error_pos]
+                        # Try to close any open structures
+                        for attempt in [
+                            truncated + '}',
+                            truncated + '}}',
+                            truncated + ']',
+                            truncated + ']}',
+                            truncated + '}]}',
+                        ]:
+                            try:
+                                result = json.loads(attempt)
+                                print(f"✓ Recovered partial JSON by truncating at error position")
+                                return result
+                            except:
+                                continue
+                except:
+                    pass
+
                 # Save failed response to file for debugging
                 try:
                     import tempfile
@@ -207,14 +242,22 @@ IMPORTANT:
 - Ensure all strings are properly quoted with double quotes
 - The response must be parseable by json.loads() in Python"""
 
+        # For large field sets, we need more tokens
+        estimated_tokens = len(batch) * 60 + 500
+        max_tokens_needed = min(8192, max(4096, estimated_tokens))
+
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=4096,
+            max_tokens=max_tokens_needed,
             messages=[{"role": "user", "content": prompt}]
         )
 
         # Parse LLM response
         response_text = response.content[0].text.strip()
+
+        if response.stop_reason == "max_tokens":
+            print(f"Warning: Deduplication response truncated at {max_tokens_needed} tokens")
+
         groups = self._parse_llm_json_response(response_text, "deduplication response")
 
         if groups is None:
@@ -293,13 +336,21 @@ IMPORTANT:
 - Ensure all strings are properly quoted with double quotes
 - The response must be parseable by json.loads() in Python"""
 
+        # For large field sets, we need more tokens
+        estimated_tokens = len(fields) * 40 + 500
+        max_tokens_needed = min(8192, max(4096, estimated_tokens))
+
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=4096,
+            max_tokens=max_tokens_needed,
             messages=[{"role": "user", "content": prompt}]
         )
 
         response_text = response.content[0].text.strip()
+
+        if response.stop_reason == "max_tokens":
+            print(f"Warning: Grouping response truncated at {max_tokens_needed} tokens")
+
         groups = self._parse_llm_json_response(response_text, "grouping response")
 
         if groups is None:
@@ -403,13 +454,24 @@ IMPORTANT:
 - The response must be parseable by json.loads() in Python
 - Boolean values should be true/false (lowercase), not True/False"""
 
+        # For large field sets, we need more tokens
+        # Estimate: ~50-80 tokens per field relationship
+        estimated_tokens = len(fields) * 80 + 1000  # +1000 for parent questions
+        max_tokens_needed = min(8192, max(4096, estimated_tokens))
+
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=4096,
+            max_tokens=max_tokens_needed,
             messages=[{"role": "user", "content": prompt}]
         )
 
         response_text = response.content[0].text.strip()
+
+        # Check if response was truncated
+        if response.stop_reason == "max_tokens":
+            print(f"Warning: Response was truncated at {max_tokens_needed} tokens")
+            print("Some conditional logic may be incomplete. Consider processing fewer fields at once.")
+
         conditional_logic = self._parse_llm_json_response(response_text, "conditional logic response")
 
         if conditional_logic is None:
