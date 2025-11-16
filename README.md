@@ -28,11 +28,12 @@ An intelligent tool that extracts acroforms (form fields) from multiple PDF file
 ### 4. **Conditional Logic Generation**
 - Identifies patterns and creates decision tree logic
 - Generates high-level parent questions to filter fields
+- Specifies exact conditions for showing dependent fields
 - Examples:
-  - "Are you married?" → controls spouse fields
-  - "How many children do you have?" → controls child fields
-  - "Are you employed?" → controls employment fields
-- Tracks parent-child relationships in metadata
+  - "Are you married?" (boolean) → Spouse fields show when `equals true`
+  - "How many children?" (number) → Child 1 shows when `> 0`, Child 2 shows when `>= 2`
+  - "Are you employed?" (boolean) → Employment fields show when `equals true`
+- Tracks parent-child relationships with condition operators in metadata
 
 ### 5. **Enhanced Field Metadata**
 - User-friendly labels and explanations
@@ -143,6 +144,16 @@ The tool generates a JSON file with the following structure:
       "generated": true
     }
   },
+  "num_children": {
+    "label": "How many children do you have?",
+    "type": "number",
+    "required": false,
+    "options": null,
+    "_metadata": {
+      "is_parent_question": true,
+      "generated": true
+    }
+  },
   "Applicant/Petitioner Full Last Name": {
     "label": "What is your full last name?",
     "explanation": "Enter your complete last name as it appears on official documents like your passport or birth certificate.",
@@ -196,6 +207,46 @@ The tool generates a JSON file with the following structure:
       "source_pdf": ["i-485.pdf"],
       "order_index": 5,
       "parent": "are_you_married",
+      "parent_condition": {
+        "operator": "equals",
+        "value": true
+      },
+      "position": null
+    }
+  },
+  "Child 1 Name": {
+    "label": "What is your first child's name?",
+    "explanation": "Enter your first child's full legal name.",
+    "type": "text",
+    "required": false,
+    "placeholder": "Enter child's name",
+    "_metadata": {
+      "field_name": "Child 1 Name",
+      "source_pdf": ["i-485.pdf"],
+      "order_index": 7,
+      "parent": "num_children",
+      "parent_condition": {
+        "operator": "greater_than",
+        "value": 0
+      },
+      "position": null
+    }
+  },
+  "Child 2 Name": {
+    "label": "What is your second child's name?",
+    "explanation": "Enter your second child's full legal name.",
+    "type": "text",
+    "required": false,
+    "placeholder": "Enter child's name",
+    "_metadata": {
+      "field_name": "Child 2 Name",
+      "source_pdf": ["i-485.pdf"],
+      "order_index": 7,
+      "parent": "num_children",
+      "parent_condition": {
+        "operator": "greater_or_equal",
+        "value": 2
+      },
       "position": null
     }
   }
@@ -217,11 +268,18 @@ Each field has:
   - **source_pdf**: Source PDF file(s) (array if field appears in multiple PDFs)
   - **order_index**: Rendering order - fields with the same order_index should be rendered together as a group
   - **parent**: ID of parent question (for conditional fields)
+  - **parent_condition**: Condition for showing this field (only present if field has a parent)
+    - **operator**: Comparison operator - `"equals"`, `"not_equals"`, `"greater_than"`, `"greater_or_equal"`, `"less_than"`, `"less_or_equal"`
+    - **value**: The value to compare against (boolean, number, or string)
   - **position**: Field position coordinates (if available)
   - **is_parent_question**: True if this is a generated parent question (only for parent questions)
   - **generated**: True if field was generated (not from PDF) (only for parent questions)
 
-**Note**: Fields with the same `order_index` belong to the same logical group and should be rendered together. For example, "First Name", "Middle Name", and "Last Name" would all have `order_index: 0`.
+**Notes**:
+- Fields with the same `order_index` belong to the same logical group and should be rendered together. For example, "First Name", "Middle Name", and "Last Name" would all have `order_index: 0`.
+- Conditional rendering: If a field has `parent` and `parent_condition`, render it only when the parent field's value satisfies the condition.
+  - Example: `"parent": "are_you_married"`, `"parent_condition": {"operator": "equals", "value": true}` means show this field only when the user answers "Yes" to "Are you married?"
+  - Example: `"parent": "num_children"`, `"parent_condition": {"operator": "greater_or_equal", "value": 2}` means show this field only when number of children is 2 or more
 
 ## How It Works
 
@@ -251,8 +309,9 @@ Claude AI identifies related fields and:
 Claude AI analyzes field patterns and:
 - Identifies conditional relationships (e.g., spouse fields only if married)
 - Generates high-level parent questions
-- Creates parent-child mappings
-- Builds decision tree structure
+- Creates parent-child mappings with condition values
+- Builds decision tree structure with operators (equals, greater_than, etc.)
+- Determines the specific condition value that triggers showing each field
 
 ### 5. Enhancement Phase
 For each field, Claude AI generates:

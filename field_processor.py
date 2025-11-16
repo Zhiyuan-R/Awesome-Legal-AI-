@@ -278,7 +278,7 @@ Your task:
 1. Identify patterns where multiple fields could be controlled by a single parent question
 2. For example: if there are spouse1, spouse2... spouse6 fields, create a parent question "Are you married?" or "How many spouses?"
 3. For example: if there are child1, child2... fields, create "Do you have children?" and "How many children?"
-4. Create logical parent-child relationships
+4. Create logical parent-child relationships WITH condition values
 
 Return a JSON object with:
 - "parent_questions": Array of new high-level questions to add
@@ -288,13 +288,20 @@ Return a JSON object with:
     "type": "boolean", "number", or "choice",
     "options": (if type is choice)
   }}
-- "field_relationships": Object mapping field indices to their parent question ID (if any)
+- "field_relationships": Object mapping field indices to their condition
+  Each has: {{
+    "parent_id": parent question ID,
+    "condition": {{
+      "operator": "equals", "greater_than", "greater_or_equal", "less_than", "less_or_equal", "not_equals",
+      "value": the value to compare against
+    }}
+  }}
 
 Example:
 {{
   "parent_questions": [
     {{
-      "question_id": "has_spouse",
+      "question_id": "are_you_married",
       "label": "Are you married?",
       "type": "boolean"
     }},
@@ -305,10 +312,22 @@ Example:
     }}
   ],
   "field_relationships": {{
-    "5": "has_spouse",
-    "6": "has_spouse",
-    "10": "num_children",
-    "11": "num_children"
+    "5": {{
+      "parent_id": "are_you_married",
+      "condition": {{"operator": "equals", "value": true}}
+    }},
+    "6": {{
+      "parent_id": "are_you_married",
+      "condition": {{"operator": "equals", "value": true}}
+    }},
+    "10": {{
+      "parent_id": "num_children",
+      "condition": {{"operator": "greater_than", "value": 0}}
+    }},
+    "11": {{
+      "parent_id": "num_children",
+      "condition": {{"operator": "greater_or_equal", "value": 2}}
+    }}
   }}
 }}
 
@@ -361,20 +380,40 @@ Respond with ONLY the JSON object, no additional text."""
             # Use _group_id for order_index (fields in same group get same order_index)
             order_index = field.get("_group_id", idx)
 
+            # Extract parent relationship and condition
+            relationship = relationships.get(str(idx))
+            parent_id = None
+            parent_condition = None
+
+            if relationship:
+                if isinstance(relationship, dict):
+                    # New format with condition
+                    parent_id = relationship.get("parent_id")
+                    parent_condition = relationship.get("condition")
+                else:
+                    # Legacy format (just parent ID string)
+                    parent_id = relationship
+
             field_key = field["field_name"]
+            metadata = {
+                "field_name": field["field_name"],
+                "source_pdf": field.get("sources", [field.get("source_pdf")]),
+                "order_index": order_index,
+                "parent": parent_id,
+                "position": None
+            }
+
+            # Add parent_condition if it exists
+            if parent_condition:
+                metadata["parent_condition"] = parent_condition
+
             output[field_key] = {
                 "label": label_explanation["label"],
                 "explanation": label_explanation["explanation"],
                 "type": field.get("field_type", "text"),
                 "required": field.get("required", False),
                 "placeholder": f"Enter your {field['field_name'].lower()}",
-                "_metadata": {
-                    "field_name": field["field_name"],
-                    "source_pdf": field.get("sources", [field.get("source_pdf")]),
-                    "order_index": order_index,
-                    "parent": relationships.get(str(idx)),
-                    "position": None
-                }
+                "_metadata": metadata
             }
 
             # Add options for choice fields
