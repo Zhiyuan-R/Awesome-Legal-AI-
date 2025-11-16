@@ -5,6 +5,7 @@ using Claude AI.
 """
 
 import json
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from anthropic import Anthropic
 import os
@@ -28,6 +29,52 @@ class FieldProcessor:
             )
         self.client = Anthropic(api_key=self.api_key)
         self.model = "claude-sonnet-4-5-20250929"
+
+    def _parse_llm_json_response(
+        self,
+        response_text: str,
+        context: str = "LLM response"
+    ) -> Optional[Any]:
+        """
+        Parse JSON from LLM response with automatic error recovery.
+
+        Args:
+            response_text: The response text from the LLM
+            context: Description of what's being parsed (for error messages)
+
+        Returns:
+            Parsed JSON object or None if parsing fails
+        """
+        # Remove markdown code blocks if present
+        text = response_text.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1]) if len(lines) > 2 else text
+            if text.startswith("json"):
+                text = text[4:].strip()
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            print(f"Warning: Failed to parse {context}: {e}")
+            print(f"Response preview (first 500 chars):\n{text[:500]}")
+            if len(text) > 500:
+                print(f"Response preview (last 500 chars):\n{text[-500:]}")
+
+            # Try to fix common JSON issues
+            fixed_text = text
+
+            # Fix trailing commas before closing braces/brackets
+            fixed_text = re.sub(r',(\s*[}\]])', r'\1', fixed_text)
+
+            # Try parsing again
+            try:
+                result = json.loads(fixed_text)
+                print(f"✓ Successfully parsed {context} after fixing trailing commas")
+                return result
+            except json.JSONDecodeError as e2:
+                print(f"Still failed after attempted fixes: {e2}")
+                return None
 
     def process_fields(
         self,
@@ -135,19 +182,9 @@ Respond with ONLY the JSON array, no additional text."""
 
         # Parse LLM response
         response_text = response.content[0].text.strip()
+        groups = self._parse_llm_json_response(response_text, "deduplication response")
 
-        # Remove markdown code blocks if present
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
-            if response_text.startswith("json"):
-                response_text = response_text[4:].strip()
-
-        try:
-            groups = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse LLM response: {e}")
-            print(f"Response was: {response_text}")
+        if groups is None:
             # Fallback: treat each field as unique
             return fields
 
@@ -226,18 +263,9 @@ Respond with ONLY the JSON array, no additional text."""
         )
 
         response_text = response.content[0].text.strip()
+        groups = self._parse_llm_json_response(response_text, "grouping response")
 
-        # Remove markdown code blocks
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
-            if response_text.startswith("json"):
-                response_text = response_text[4:].strip()
-
-        try:
-            groups = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse grouping response: {e}")
+        if groups is None:
             # Fallback: each field in its own group
             groups = [{"group_name": f"group_{idx}", "field_indices": [idx], "description": ""}
                       for idx in range(len(fields))]
@@ -340,18 +368,9 @@ Respond with ONLY the JSON object, no additional text."""
         )
 
         response_text = response.content[0].text.strip()
+        conditional_logic = self._parse_llm_json_response(response_text, "conditional logic response")
 
-        # Remove markdown code blocks
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
-            if response_text.startswith("json"):
-                response_text = response_text[4:].strip()
-
-        try:
-            conditional_logic = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse conditional logic: {e}")
+        if conditional_logic is None:
             conditional_logic = {"parent_questions": [], "field_relationships": {}}
 
         # Build final output structure
@@ -452,16 +471,16 @@ Respond with ONLY the JSON, no additional text."""
             )
 
             response_text = response.content[0].text.strip()
+            result = self._parse_llm_json_response(response_text, f"label for '{field_name}'")
 
-            # Remove markdown code blocks
-            if response_text.startswith("```"):
-                lines = response_text.split("\n")
-                response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
-                if response_text.startswith("json"):
-                    response_text = response_text[4:].strip()
-
-            result = json.loads(response_text)
-            return result
+            if result:
+                return result
+            else:
+                # Fallback
+                return {
+                    "label": f"What is your {field_name.lower()}?",
+                    "explanation": f"Enter your {field_name.lower()}"
+                }
 
         except Exception as e:
             print(f"Warning: Failed to generate label for {field_name}: {e}")
