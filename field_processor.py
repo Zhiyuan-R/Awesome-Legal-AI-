@@ -242,15 +242,13 @@ Respond with ONLY the JSON array, no additional text."""
             groups = [{"group_name": f"group_{idx}", "field_indices": [idx], "description": ""}
                       for idx in range(len(fields))]
 
-        # Add group information to fields
+        # Add group information to fields (using group_id for order_index assignment later)
         grouped_fields = []
-        for group in groups:
-            group_name = group["group_name"]
-            for group_idx, field_idx in enumerate(group["field_indices"]):
+        for group_id, group in enumerate(groups):
+            for field_idx in group["field_indices"]:
                 if field_idx < len(fields):
                     field = fields[field_idx].copy()
-                    field["group"] = group_name
-                    field["group_index"] = group_idx
+                    field["_group_id"] = group_id  # Temporary, will be used for order_index
                     grouped_fields.append(field)
 
         return grouped_fields
@@ -268,8 +266,7 @@ Respond with ONLY the JSON array, no additional text."""
         for idx, field in enumerate(fields):
             field_summary.append({
                 "index": idx,
-                "field_name": field["field_name"],
-                "group": field.get("group", "unknown")
+                "field_name": field["field_name"]
             })
 
         prompt = f"""You are an expert at designing smart forms. I need to create a decision tree for form fields to avoid showing irrelevant questions.
@@ -361,6 +358,9 @@ Respond with ONLY the JSON object, no additional text."""
             # Generate user-friendly label and explanation
             label_explanation = self._generate_label_and_explanation(field["field_name"])
 
+            # Use _group_id for order_index (fields in same group get same order_index)
+            order_index = field.get("_group_id", idx)
+
             field_key = field["field_name"]
             output[field_key] = {
                 "label": label_explanation["label"],
@@ -371,10 +371,7 @@ Respond with ONLY the JSON object, no additional text."""
                 "_metadata": {
                     "field_name": field["field_name"],
                     "source_pdf": field.get("sources", [field.get("source_pdf")]),
-                    "page": field.get("page"),
-                    "order_index": idx,
-                    "group": field.get("group"),
-                    "group_index": field.get("group_index"),
+                    "order_index": order_index,
                     "parent": relationships.get(str(idx)),
                     "position": None
                 }

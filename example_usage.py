@@ -172,16 +172,16 @@ def example_analyze_output():
     for field_type, count in sorted(type_counts.items()):
         print(f"  {field_type}: {count}")
 
-    # Group by group
-    group_counts = {}
+    # Group by order_index (fields with same order_index render together)
+    order_index_counts = {}
     for field in forms.values():
-        group = field.get("_metadata", {}).get("group")
-        if group:
-            group_counts[group] = group_counts.get(group, 0) + 1
+        order_idx = field.get("_metadata", {}).get("order_index")
+        if order_idx is not None:
+            order_index_counts[order_idx] = order_index_counts.get(order_idx, 0) + 1
 
-    print("\nFields by group:")
-    for group, count in sorted(group_counts.items()):
-        print(f"  {group}: {count}")
+    print("\nFields by rendering group (order_index):")
+    for order_idx, count in sorted(order_index_counts.items()):
+        print(f"  Group {order_idx}: {count} fields")
 
     # Find conditional fields
     conditional_fields = [

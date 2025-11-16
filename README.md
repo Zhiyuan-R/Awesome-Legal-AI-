@@ -17,12 +17,13 @@ An intelligent tool that extracts acroforms (form fields) from multiple PDF file
 - Language model understands semantic meaning
 
 ### 3. **Smart Field Grouping**
-- Automatically groups related fields together
+- Automatically groups related fields together for rendering
+- Related fields are assigned the same `order_index` value
 - Examples:
-  - Name group: First Name, Middle Name, Last Name
-  - Address group: Street, Apt, City, State, ZIP
-  - Contact group: Phone, Email, Fax
-- Assigns group indices for proper rendering order
+  - First Name, Middle Name, Last Name → all get `order_index: 0`
+  - Street, Apt, City, State, ZIP → all get `order_index: 1`
+  - Phone, Email, Fax → all get `order_index: 2`
+- Fields with the same `order_index` should be rendered together in the UI
 
 ### 4. **Conditional Logic Generation**
 - Identifies patterns and creates decision tree logic
@@ -151,10 +152,7 @@ The tool generates a JSON file with the following structure:
     "_metadata": {
       "field_name": "Applicant/Petitioner Full Last Name",
       "source_pdf": ["g-1145.pdf", "i-485.pdf"],
-      "page": 0,
       "order_index": 0,
-      "group": "name",
-      "group_index": 0,
       "parent": null,
       "position": null
     }
@@ -168,10 +166,21 @@ The tool generates a JSON file with the following structure:
     "_metadata": {
       "field_name": "First Name",
       "source_pdf": ["i-485.pdf"],
-      "page": 1,
-      "order_index": 1,
-      "group": "name",
-      "group_index": 1,
+      "order_index": 0,
+      "parent": null,
+      "position": null
+    }
+  },
+  "Middle Name": {
+    "label": "What is your middle name?",
+    "explanation": "Enter your middle name if you have one.",
+    "type": "text",
+    "required": false,
+    "placeholder": "Enter your middle name",
+    "_metadata": {
+      "field_name": "Middle Name",
+      "source_pdf": ["i-485.pdf"],
+      "order_index": 0,
       "parent": null,
       "position": null
     }
@@ -185,10 +194,7 @@ The tool generates a JSON file with the following structure:
     "_metadata": {
       "field_name": "Spouse Name",
       "source_pdf": ["i-485.pdf"],
-      "page": 2,
       "order_index": 5,
-      "group": "spouse",
-      "group_index": 0,
       "parent": "are_you_married",
       "position": null
     }
@@ -209,14 +215,13 @@ Each field has:
 - **_metadata**: Additional metadata
   - **field_name**: Original field name from PDF
   - **source_pdf**: Source PDF file(s) (array if field appears in multiple PDFs)
-  - **page**: Page number in PDF
-  - **order_index**: Position in the overall form
-  - **group**: Group name (e.g., "name", "address", "contact")
-  - **group_index**: Position within the group
+  - **order_index**: Rendering order - fields with the same order_index should be rendered together as a group
   - **parent**: ID of parent question (for conditional fields)
   - **position**: Field position coordinates (if available)
-  - **is_parent_question**: True if this is a generated parent question
-  - **generated**: True if field was generated (not from PDF)
+  - **is_parent_question**: True if this is a generated parent question (only for parent questions)
+  - **generated**: True if field was generated (not from PDF) (only for parent questions)
+
+**Note**: Fields with the same `order_index` belong to the same logical group and should be rendered together. For example, "First Name", "Middle Name", and "Last Name" would all have `order_index: 0`.
 
 ## How It Works
 
@@ -238,9 +243,9 @@ Claude AI analyzes all extracted fields and:
 
 ### 3. Grouping Phase
 Claude AI identifies related fields and:
-- Creates logical groups (name, address, contact, employment, etc.)
-- Assigns fields to appropriate groups
-- Sets group indices for rendering order
+- Identifies which fields should be rendered together (e.g., name components, address components)
+- Assigns the same `order_index` to fields that belong together
+- Creates logical groupings for optimal form rendering
 
 ### 4. Conditional Logic Phase
 Claude AI analyzes field patterns and:

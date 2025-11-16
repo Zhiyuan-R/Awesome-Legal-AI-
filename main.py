@@ -186,13 +186,13 @@ def main():
                        if v.get("_metadata", {}).get("is_parent_question"))
     print(f"Generated parent questions: {parent_count}")
 
-    # Count groups
-    groups = set()
+    # Count unique order_index values (groups)
+    order_indices = set()
     for v in combined_forms.values():
-        group = v.get("_metadata", {}).get("group")
-        if group:
-            groups.add(group)
-    print(f"Field groups: {len(groups)}")
+        order_idx = v.get("_metadata", {}).get("order_index")
+        if order_idx is not None:
+            order_indices.add(order_idx)
+    print(f"Field groups (unique order_index): {len(order_indices)}")
 
     print("\n✓ Processing complete!")
 
